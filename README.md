@@ -1,5 +1,5 @@
 # cc3d_MD_plugin
-
+MacOS compilation instructions [Here](https://compucell3ddevelopersmanual.readthedocs.io/en/master/building_core_cc3d_cpp_code_mac.html)
 
 # Helpful VIM
 VIM is a common text editor used to edit files within command line. [Here](https://vim-adventures.com/) is a fun game to practice VIM commands.
