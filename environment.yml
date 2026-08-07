@@ -1,0 +1,41 @@
+channels:
+  - conda-forge
+  - compucell3d
+dependencies:
+# compile dependencies
+    - cmake=3.21
+    - swig>=4
+    - numpy=2.2.6
+    - clang_osx-arm64
+    - clangxx_osx-arm64
+    - llvm-openmp
+    - python=3.12
+    - vtk=9.2
+    - eigen>=3.4,<3.5
+    - tbb-devel=2021
+    - boost=1.85
+    - psutil
+    - deprecated
+    - cc3d-network-solvers>=0.3.1
+# cc3d run dependencies
+    - simservice
+    - notebook
+    - ipywidgets
+    - ipyvtklink
+    - sphinx
+    - graphviz
+    - scipy
+    - pandas
+    - jinja2
+    - lxml
+# player dependencies
+    - webcolors
+    - requests
+    - pyqt=5
+    - pyqtgraph
+# twedit dependencies
+    - chardet
+    - pyqtwebkit
+    - qscintilla2
+    - sphinx
+    - pywin32 # [win]
