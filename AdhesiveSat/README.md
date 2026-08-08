@@ -1,4 +1,5 @@
 # Levi commands to compile
+### CMake
 ```
 cmake -S ~/src-cc3d/CompuCell3D/CompuCell3D \
     -B ~/src-cc3d/CompuCell3D_build \
@@ -11,9 +12,14 @@ cmake -S ~/src-cc3d/CompuCell3D/CompuCell3D \
     -G "Unix Makefiles" \
     -DCMAKE_INSTALL_PREFIX=~/src-cc3d/CompuCell3D_install \
     -Wno-dev
+```
 
+### Make
+```
 cd ~/src-cc3d/CompuCell3D_build
 make -j 8
-
+```
+### Install
+```
 make install
 ```
