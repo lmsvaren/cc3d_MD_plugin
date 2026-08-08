@@ -13,8 +13,6 @@ Twedit > CC3DC++ > Generate New Module > Module Core Name: AdhesiveSat
 |AdhesiveSatPlugin.h|Declaring everything|
 |AdhesiveSatPlugin.cpp|Defining everything|
 
-|CMakesList|NA|
-
 # Helpful VIM
 VIM is a common text editor used to edit files within command line. [Here](https://vim-adventures.com/) is a fun game to practice VIM commands.
 |Command|Function|
