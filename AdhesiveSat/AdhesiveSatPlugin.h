@@ -3,6 +3,7 @@
 
 #include <CompuCell3D/CC3D.h>
 #include "AdhesiveSatDLLSpecifier.h"
+#include <vector>
 
 class CC3DXMLElement;
 
@@ -40,6 +41,7 @@ namespace CompuCell3D {
         WatchableField3D<CellG *> *cellFieldG;
 
         void initializeYField();
+        // void initializeGridField();
         void initializeOccupiedSiteCounts();
         bool isAdhesiveSite(const Point3D& pt) const;
         int getOccupiedSiteCount(const CellG* cell);
@@ -52,6 +54,19 @@ namespace CompuCell3D {
 
         double E0;
         double Aref;
+
+        // Added for focal adhesion penalty
+        double lambdaFA = 800.0; // FA energy penalty scaling factor
+        double N0 = 10.0;        // Baseline integrin count
+        double Nh = 50.0;        // Saturation parameter
+        std::string integrinFieldName;
+        CompuCell3D::WatchableField3D<double>* integrinField;
+        double calculateFAPenalty(const Point3D &pt) const;
+
+        // For bead particles
+        std::vector<std::vector<double>> beadPositions;
+        void initializeBeads(double stepSize = 1.0);
+        
 
     public:
         AdhesiveSatPlugin();
@@ -88,6 +103,11 @@ namespace CompuCell3D {
 
         ExtraMembersGroupAccessor<AdhesiveSatData>* getAdhesiveSatDataAccessorPtr() {
             return &adhesiveSatDataAccessor;
+        }
+
+        // Expose beads in Python
+        const std::vector<std::vector<double>>& getBeadPositions() const {
+            return beadPositions;
         }
     };
 
