@@ -1,7 +1,7 @@
 # cc3d_MD_plugin
-MacOS compilation instructions [Here](https://compucell3ddevelopersmanual.readthedocs.io/en/master/building_core_cc3d_cpp_code_mac.html)
+MacOS cc3d compilation instructions [Here](https://compucell3ddevelopersmanual.readthedocs.io/en/master/building_core_cc3d_cpp_code_mac.html)
 
-[Michael Getz (2026) C++ Extensions](https://www.youtube.com/watch?v=6xor9AhwINY)
+[YouTube: Michael Getz (2026) C++ Extensions](https://www.youtube.com/watch?v=6xor9AhwINY)
 
 Files after creating new PlugIn module
 
