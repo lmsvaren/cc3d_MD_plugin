@@ -18,6 +18,8 @@ class adhesionsatSteppable(SteppableBasePy):
         self.spring_k = 1.0
         self.spring_k_cyto = 1.0
         self.spring_r0 = 0.0
+        self.bend_k = 0.5
+        self.bend_t0 = np.pi
         self.padding = 20.0
 
         self.num_grid_pts = 0
@@ -75,11 +77,17 @@ class adhesionsatSteppable(SteppableBasePy):
         snapshot.particles.N = total_particles
         snapshot.particles.types = ["grid_point",  "cell_com", "adhesion_bead", "boundary_bead"] #I would change "grid_point" to "free bead"
 
-        snapshot.bonds.N = self.num_grid_pts
+        linear_bonds = []
+        cyto_bonds = []
+        ## We don't just have this number of bonds in the system, will have to fix
+        total_bonds= len(linear_bonds) + len(cyto_bonds)
+        snapshot.bonds.N = total_bonds
         snapshot.bonds.types = ["linear_spring", "no_bond", "cyto_spring"]
-        snapshot.angles.types =[ "polymer_bend", "no_angle"]
+        snapshot.angles.types =[ "angular_spring", "no_angle"]
 
-        ## the "cyto_spring" is the spring type connecting the cell_com to the adhesion_beads
+        '''linear_spring: bonds between free beads
+        cyto_spring: bonds between adhesion beads and cell_com
+        angular_spring: angles between triplets of beads'''
 
 
         # Populate Snapshot Data
@@ -93,21 +101,21 @@ class adhesionsatSteppable(SteppableBasePy):
         snapshot.particles.typeid[self.com_particle_idx] = 1  # cell_com
 
 
-        ## This connects all the adhesion_beads to the cell_com with a cyto_spring bond. Need to change this eventually
+        ## This connects all the adhesion_beads to the cell_com with a cyto_spring bond.
+        ## Possibly it needs to be initialized as empty before this loop?
+        ## Because if at a later time an adhesion bead turns free, it may retain a bond to the cell_com.
         for k in range(self.num_grid_pts):
-            if k.type == "adhesion_bead":
+            if snapshot.particles.typeid[k] == 2: ## if the particle is an adhesion bead
                 snapshot.bonds.group[k] = [k, self.com_particle_idx]
-                snapshot.bonds.typeid[k] = 3  # cyto_spring
-            else:
-                print("no adhesion bead found")
-        
+                snapshot.bonds.typeid[k] = 2  # cyto_spring
+       
 
-        
+       
 
         # Create Simulation State from Snapshot
         self.sim.create_state_from_snapshot(snapshot)
 
-        # Integrator Setup (Bonds Only — No Pair/LJ Potentials)
+        # Integrator Setup (Bonds Only â€” No Pair/LJ Potentials)
         self.integrator = hoomd.md.Integrator(self.md_dt)
 
 
@@ -121,26 +129,27 @@ class adhesionsatSteppable(SteppableBasePy):
             k=self.spring_k, r0=self.spring_r0
         )
 
+
+        beamspring.params["no_bond"] = dict(
+            k=0, r0=self.spring_r0
+        )
+       
         # bond parameters for the linear spring between cell_com and grid points
 
         beamspring.params["cyto_spring"] = dict(
                     k= self.spring_k_cyto , r0=self.spring_r0
                 )
-            
+           
         ## angular bonds
-        if self.angle_potential == "harmonic":
-            harmangle = hoomd.md.angle.Harmonic()
-            harmangle.params['polymer_bend'] = dict(k=self.bend_k, t0=self.bend_t0) 
-        else:
-            harmangle = hoomd.md.angle.CosineSquared()
-            harmangle.params['polymer_bend'] = dict(k=self.bend_k, t0=self.bend_t0) 
+        harmangle = hoomd.md.angle.Harmonic()
+        harmangle.params['angular_spring'] = dict(k=self.bend_k, t0=self.bend_t0)
+ 
 
         ### dummy bond
-        harmangle.params['no_angle'] = dict(k=0, t0=0) 
-        
+        harmangle.params['no_angle'] = dict(k=0, t0=0)
+       
         self.integrator.forces.append(beamspring)
         self.integrator.forces.append(harmangle)
-
 
 
         # Integration Method (Langevin Thermostat for grid points)
@@ -194,8 +203,3 @@ class adhesionsatSteppable(SteppableBasePy):
             ix, iy = int(round(x)), int(round(y))
             if 0 <= ix < self.dim.x and 0 <= iy < self.dim.y:
                 self.bead_field[ix, iy, 0] = 1.0
-
-
-
-
-
