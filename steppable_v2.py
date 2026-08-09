@@ -77,8 +77,11 @@ class adhesionsatSteppable(SteppableBasePy):
         snapshot.particles.N = total_particles
         snapshot.particles.types = ["grid_point",  "cell_com", "adhesion_bead", "boundary_bead"] #I would change "grid_point" to "free bead"
 
+        linear_bonds = []
+        cyto_bonds = []
         ## We don't just have this number of bonds in the system, will have to fix
-        snapshot.bonds.N = self.num_grid_pts
+        total_bonds= len(linear_bonds) + len(cyto_bonds)
+        snapshot.bonds.N = total_bonds
         snapshot.bonds.types = ["linear_spring", "no_bond", "cyto_spring"]
         snapshot.angles.types =[ "angular_spring", "no_angle"]
 
@@ -112,7 +115,7 @@ class adhesionsatSteppable(SteppableBasePy):
         # Create Simulation State from Snapshot
         self.sim.create_state_from_snapshot(snapshot)
 
-        # Integrator Setup (Bonds Only — No Pair/LJ Potentials)
+        # Integrator Setup (Bonds Only â€” No Pair/LJ Potentials)
         self.integrator = hoomd.md.Integrator(self.md_dt)
 
 
@@ -126,6 +129,11 @@ class adhesionsatSteppable(SteppableBasePy):
             k=self.spring_k, r0=self.spring_r0
         )
 
+
+        beamspring.params["no_bond"] = dict(
+            k=0, r0=self.spring_r0
+        )
+        
         # bond parameters for the linear spring between cell_com and grid points
 
         beamspring.params["cyto_spring"] = dict(
