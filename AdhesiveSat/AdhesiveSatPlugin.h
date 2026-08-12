@@ -40,8 +40,8 @@ namespace CompuCell3D {
         BoundaryStrategy *boundaryStrategy;
         WatchableField3D<CellG *> *cellFieldG;
 
-        void initializeYField();
-        // void initializeGridField();
+        // void initializeYField();
+        void initializeGridField();
         void initializeOccupiedSiteCounts();
         bool isAdhesiveSite(const Point3D& pt) const;
         int getOccupiedSiteCount(const CellG* cell);
@@ -71,6 +71,7 @@ namespace CompuCell3D {
     public:
         AdhesiveSatPlugin();
         virtual ~AdhesiveSatPlugin();
+        void checkBeadCellAttribution();
         
         virtual void init(
             Simulator *simulator, 
@@ -105,7 +106,7 @@ namespace CompuCell3D {
             return &adhesiveSatDataAccessor;
         }
 
-        // Expose beads in Python
+        // Expose beads in Python??
         const std::vector<std::vector<double>>& getBeadPositions() const {
             return beadPositions;
         }

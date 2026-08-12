@@ -79,8 +79,11 @@ class adhesionsatSteppable(SteppableBasePy):
 
         linear_bonds = []
         cyto_bonds = []
+        ## Define bonds and add to the HOOMD object
+        
+
         ## We don't just have this number of bonds in the system, will have to fix
-        total_bonds= len(linear_bonds) + len(cyto_bonds)
+        self.total_bonds = len(linear_bonds) + len(cyto_bonds)
         snapshot.bonds.N = total_bonds
         snapshot.bonds.types = ["linear_spring", "no_bond", "cyto_spring"]
         snapshot.angles.types =[ "angular_spring", "no_angle"]

@@ -3,6 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include <CompuCell3D/Field3D/Point3D.h>
+#include <CompuCell3D/Potts3D/Cell.h>
+#include <CompuCell3D/Potts3D/Potts3D.h>
+#include <iostream>
+
 using namespace CompuCell3D;
 
 AdhesiveSatPlugin::AdhesiveSatPlugin():
@@ -45,6 +50,7 @@ int AdhesiveSatPlugin::getOccupiedSiteCount(const CellG* cell) {
 }
 
 void AdhesiveSatPlugin::init(Simulator *simulator, CC3DXMLElement *_xmlData) {
+    initializeBeads(1.0);
     sim = simulator;
     potts = simulator->getPotts();
     cellFieldG = static_cast<WatchableField3D<CellG*> *>(
@@ -106,56 +112,29 @@ void AdhesiveSatPlugin::field3DChange(const Point3D &pt, CellG *newCell, CellG *
 /*
 Initialize shape
 */
-void AdhesiveSatPlugin::initializeYField() {
-    const int centerX = 100;
-    const int halfWidth = 3;
+// void AdhesiveSatPlugin::initializeYField() {
+//     const int centerX = 100;
+//     const int halfWidth = 3;
     
-    for (int x = 0; x < fieldDim.x; ++x) {
-        for (int y = 0; y < fieldDim.y; ++y) {
-            Point3D pt(x, y, 0);
-            const bool stem = 
-                y >= 20 &&
-                y <= 100 &&
-                std::abs(x - centerX) <= halfWidth;
-
-            const bool leftArm =
-                y >= 100 &&
-                y <= 160 &&
-                std::abs((x + y) - 200) <= halfWidth;
-            
-            const bool rightArm = 
-                y >= 100 &&
-                y <= 160 &&
-                std::abs(x - y) <= halfWidth;
-
-            const bool adhesionMoleculesPresent = stem || leftArm || rightArm;
-
-            adhesionField->set(
-                pt,
-                static_cast<unsigned char>(adhesionMoleculesPresent)
-            );
-        }
-    }
-}
-
-// void AdhesiveSatPlugin::initializeGridField() {
-//     const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
-//     const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
-
 //     for (int x = 0; x < fieldDim.x; ++x) {
 //         for (int y = 0; y < fieldDim.y; ++y) {
 //             Point3D pt(x, y, 0);
+//             const bool stem = 
+//                 y >= 20 &&
+//                 y <= 100 &&
+//                 std::abs(x - centerX) <= halfWidth;
 
-//             int xMod = x % fiberSpacing;
-//             int yMod = y % fiberSpacing;
+//             const bool leftArm =
+//                 y >= 100 &&
+//                 y <= 160 &&
+//                 std::abs((x + y) - 200) <= halfWidth;
+            
+//             const bool rightArm = 
+//                 y >= 100 &&
+//                 y <= 160 &&
+//                 std::abs(x - y) <= halfWidth;
 
-//             // Vertical fibers running along the Y-axis
-//             bool verticalFiber = (xMod <= halfWidth) || (xMod >= fiberSpacing - halfWidth);
-
-//             // Horizontal fibers running along the X-axis
-//             bool horizontalFiber = (yMod <= halfWidth) || (yMod >= fiberSpacing - halfWidth);
-
-//             bool adhesionMoleculesPresent = verticalFiber || horizontalFiber;
+//             const bool adhesionMoleculesPresent = stem || leftArm || rightArm;
 
 //             adhesionField->set(
 //                 pt,
@@ -164,6 +143,33 @@ void AdhesiveSatPlugin::initializeYField() {
 //         }
 //     }
 // }
+
+void AdhesiveSatPlugin::initializeGridField() {
+    const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
+    const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
+
+    for (int x = 0; x < fieldDim.x; ++x) {
+        for (int y = 0; y < fieldDim.y; ++y) {
+            Point3D pt(x, y, 0);
+
+            int xMod = x % fiberSpacing;
+            int yMod = y % fiberSpacing;
+
+            // Vertical fibers running along the Y-axis
+            bool verticalFiber = (xMod <= halfWidth) || (xMod >= fiberSpacing - halfWidth);
+
+            // Horizontal fibers running along the X-axis
+            bool horizontalFiber = (yMod <= halfWidth) || (yMod >= fiberSpacing - halfWidth);
+
+            bool adhesionMoleculesPresent = verticalFiber || horizontalFiber;
+
+            adhesionField->set(
+                pt,
+                static_cast<unsigned char>(adhesionMoleculesPresent)
+            );
+        }
+    }
+}
 
 
 /*
@@ -297,33 +303,119 @@ void AdhesiveSatPlugin::update(CC3DXMLElement *_xmlData, bool _fullInitFlag) {
     if (nhElem) Nh = nhElem->getDouble();
 }
 
+// void AdhesiveSatPlugin::initializeBeads(double stepSize) {
+//     beadPositions.clear();
+//     const double centerX = 100.0;
+
+//     // Stem: x = 100, y from 20 to 100
+//     for (double y = 20.0; y <= 100.0; y += stepSize) {
+//         beadPositions.push_back({centerX, y, 0.0});
+//     }
+
+//     // Left arm: x = 200 - y, y from 100 + step to 160
+//     for (double y = 100.0 + stepSize; y <= 160.0; y += stepSize) {
+//         double x = 200.0 - y;
+//         beadPositions.push_back({x, y, 0.0});
+//     }
+
+//     // Right arm: x = y, y from 100 + step to 160
+//     for (double y = 100.0 + stepSize; y <= 160.0; y += stepSize) {
+//         double x = y;
+//         beadPositions.push_back({x, y, 0.0});
+//     }
+
+//     // --- Terminal Print Statements ---
+//     std::cout << "==========================================" << std::endl;
+//     std::cout << "[AdhesiveSatPlugin] Total beads generated: " << beadPositions.size() << std::endl;
+//     for (size_t i = 0; i < beadPositions.size(); ++i) {
+//         std::cout << "[AdhesiveSat] Bead " << i << ": (" 
+//                     << beadPositions[i][0] << ", " 
+//                     << beadPositions[i][1] << ", " 
+//                     << beadPositions[i][2] << ")" << std::endl;
+//     }
+//     std::cout << "==========================================" << std::endl;
+// }
+
 void AdhesiveSatPlugin::initializeBeads(double stepSize) {
     beadPositions.clear();
-    const double centerX = 100.0;
 
-    // Stem: x = 100, y from 20 to 100
-    for (double y = 20.0; y <= 100.0; y += stepSize) {
-        beadPositions.push_back({centerX, y, 0.0});
+    const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
+    const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
+
+    // Offsets to shift positions to centered MD box coordinates [-Lx/2, Lx/2]
+    const double offsetX = fieldDim.x / 2.0;
+    const double offsetY = fieldDim.y / 2.0;
+
+    for (double x = 0.0; x < fieldDim.x; x += stepSize) {
+        int xMod = static_cast<int>(x) % fiberSpacing;
+        bool verticalFiber = (xMod <= halfWidth) || (xMod >= fiberSpacing - halfWidth);
+
+        for (double y = 0.0; y < fieldDim.y; y += stepSize) {
+            int yMod = static_cast<int>(y) % fiberSpacing;
+            bool horizontalFiber = (yMod <= halfWidth) || (yMod >= fiberSpacing - halfWidth);
+
+            if (verticalFiber || horizontalFiber) {
+                // Center bead inside pixel space and offset for HOOMD/MD coordinates
+                double posX = (x + 0.5) - offsetX;
+                double posY = (y + 0.5) - offsetY;
+
+                beadPositions.push_back({posX, posY, 0.0});
+            }
+        }
     }
 
-    // Left arm: x = 200 - y, y from 100 + step to 160
-    for (double y = 100.0 + stepSize; y <= 160.0; y += stepSize) {
-        double x = 200.0 - y;
-        beadPositions.push_back({x, y, 0.0});
+    // --- Terminal Print Statements ---
+    std::cout << "==========================================" << std::endl;
+    std::cout << "[AdhesiveSatPlugin] Total grid beads generated: " << beadPositions.size() << std::endl;
+    for (size_t i = 0; i < beadPositions.size(); ++i) {
+        std::cout << "[AdhesiveSat] Bead " << i << ": (" 
+                  << beadPositions[i][0] << ", " 
+                  << beadPositions[i][1] << ", " 
+                  << beadPositions[i][2] << ")" << std::endl;
     }
-
-    // Right arm: x = y, y from 100 + step to 160
-    for (double y = 100.0 + stepSize; y <= 160.0; y += stepSize) {
-        double x = y;
-        beadPositions.push_back({x, y, 0.0});
-    }
+    std::cout << "==========================================" << std::endl;
 }
 
+
+
+void AdhesiveSatPlugin::checkBeadCellAttribution() {
+    if (!potts) return;
+    
+    // WatchableField3D<CellG*>* cellFieldG = potts->getCellFieldG();
+    Field3D<CellG*>* cellFieldG = potts->getCellFieldG();
+    if (!cellFieldG) return;
+
+    std::cout << "==========================================" << std::endl;
+    std::cout << "[AdhesiveSatPlugin] Checking Bead Cell Mapping:" << std::endl;
+
+    for (size_t i = 0; i < beadPositions.size(); ++i) {
+        // Floor spatial coordinates to CC3D integer lattice points
+        int x = static_cast<int>(beadPositions[i][0]);
+        int y = static_cast<int>(beadPositions[i][1]);
+        int z = static_cast<int>(beadPositions[i][2]);
+
+        Point3D pt(x, y, z);
+        CellG* cell = cellFieldG->get(pt);
+
+        if (cell) {
+            std::cout << "Bead " << i << " at (" << x << ", " << y << ", " << z << ")"
+                      << " -> Cell ID: " << cell->id 
+                      << " | Type: " << static_cast<int>(cell->type) << std::endl;
+        } else {
+            std::cout << "Bead " << i << " at (" << x << ", " << y << ", " << z << ")"
+                      << " -> Medium (No Cell)" << std::endl;
+        }
+    }
+    std::cout << "==========================================" << std::endl;
+}
+
+
 void AdhesiveSatPlugin::extraInit(Simulator* simulator) {
-    initializeYField();
-    // initializeGridField();
-    initializeBeads(1.0); // Creates beads every 1.0 unit along fibers
+    // initializeYField();
+    initializeGridField();
+    // initializeBeads(1.0); // Creates beads every 1.0 unit along fibers
     initializeOccupiedSiteCounts();
+    checkBeadCellAttribution();
 }
 
 std::string AdhesiveSatPlugin::toString() {
