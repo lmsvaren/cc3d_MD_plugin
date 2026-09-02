@@ -52,7 +52,7 @@ namespace CompuCell3D {
         std::string adhesionFieldName;
         ExtraMembersGroupAccessor<AdhesiveSatData> adhesiveSatDataAccessor;
 
-        double E0;
+        double lambdaC;
         double Aref;
 
         // Added for focal adhesion penalty

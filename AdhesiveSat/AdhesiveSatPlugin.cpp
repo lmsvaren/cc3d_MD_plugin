@@ -10,13 +10,16 @@
 
 using namespace CompuCell3D;
 
+// Volume plugin:     ($\lambda A^2$) (Area Constraint Term)
+// Contact plugin:    $\sum J_{\sigma(\vec{x})\sigma(\vec{x}')} (1 - \delta_{\sigma(\vec{x}),\sigma(\vec{x}')})$
+
 AdhesiveSatPlugin::AdhesiveSatPlugin():
     sim(nullptr),
     potts(nullptr),
     cellFieldG(nullptr),
     adhesionField(nullptr),
     adhesionFieldName("AdhesionSites"),
-    E0(50.0),
+    lambdaC(50.0),
     Aref(250.0),
     pUtils(nullptr),
     lockPtr(nullptr),
@@ -219,13 +222,13 @@ void AdhesiveSatPlugin::initializeOccupiedSiteCounts() {
 }
 
 /*
-Adhesion energy calculation
+Saturation Adhesion Term
 */
 double AdhesiveSatPlugin::adhesionEnergy(double occupiedArea) const {
     if (occupiedArea <= 0.0) {
         return 0.0;
     }
-    return -E0 * occupiedArea / (Aref + occupiedArea); //lambda_C (A / (A + Ah))
+    return -lambdaC * occupiedArea / (Aref + occupiedArea); // -lambdaC (A / (A + Ah))
 }
 
 /*
@@ -238,7 +241,7 @@ double AdhesiveSatPlugin::calculateFAPenalty(const Point3D& pt) const{
 
     double N = integrinField->get(pt); // Current integrin count at site pt
     
-    // Penalty only applies if integrins exceed baseline N0
+    // Penalty only applies if integrins exceed baseline N0 (initial size of an FA,)
     if (N <= N0) {
         return 0.0;
     }
@@ -249,6 +252,7 @@ double AdhesiveSatPlugin::calculateFAPenalty(const Point3D& pt) const{
 
 
 double AdhesiveSatPlugin::changeEnergy(const Point3D &pt, const CellG *newCell, const CellG *oldCell) {
+    // Calculate delta H
     if (!isAdhesiveSite(pt)) { 
         return 0.0;
     }
@@ -275,10 +279,10 @@ void AdhesiveSatPlugin::update(CC3DXMLElement *_xmlData, bool _fullInitFlag) {
     if (!_xmlData) {
         return;
     }
-    CC3DXMLElement* e0Element = _xmlData->getFirstElement("E0");
+    CC3DXMLElement* lambdaC_Element = _xmlData->getFirstElement("lambdaC");
 
-    if (e0Element) {
-        E0 = e0Element->getDouble();
+    if (lambdaC_Element) {
+        lambdaC = lambdaC_Element->getDouble();
     }
 
     CC3DXMLElement* aRefElement = _xmlData->getFirstElement("Aref");
