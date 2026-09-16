@@ -23,6 +23,18 @@ class adhesionsatSteppable(SteppableBasePy):
         self.bend_t0 = np.pi
         self.padding = 20.0
 
+        #parameters for eq. 4 
+        self.gamma = 1.0
+        self.N_tot = 100.0
+        self.d_0 = 1.0 
+        self.f_star = 1.0
+        self.phi_s = 1.0 
+        self.phi_c = 1.0
+
+        # Dictionary tracking integrin cluster size for active FAs: {particle_idx: N_i}
+        self.fa_integrins = {}
+
+
         self.num_grid_pts = 0
         self.com_particle_idx = 0
         self.track_beads = True  # Set to True to enable trails/streaks
@@ -38,13 +50,45 @@ class adhesionsatSteppable(SteppableBasePy):
         """Shifts HOOMD centered domain back to CC3D domain."""
         offset = np.array([self.dim.x / 2.0, self.dim.y / 2.0])
         return pos_2d + offset
+        
 
+    def catch_slip_rate(self, phi):
+        """Calculates dimensionless dissociation rate d(phi) according to eq. 4:
+        d(phi) = exp(phi - phi_s) + exp(-phi)
+        """
+        return np.exp(phi - self.phi_s) + np.exp(self.phi_c-phi)
 
+    def integrate_catch_slip(self, N_i, Phi, dt):
+        """
+        Integrates focal adhesion integrin turnover (dN/dt) over time step dt
+        according to Keijzer et al. Eq. 4 [1]:
 
+            dN/dt = gamma * (N_tot - N_i) - d_0 * d(phi) * N_i
 
+        Parameters:
+            N_i (float): Current integrin cluster size (FA size).
+            Phi (float): Mechanical force/tension on the focal adhesion.
+            dt (float): Integration time step.
+        """
+        # 1. Compute dimensionless tension per integrin: phi = (f_star * Phi) / N_i
+        phi = (self.f_star * Phi) / max(N_i, 1.0)
+
+        # 2. Unbinding rate function d(phi)
+        d_phi = self.catch_slip_rate(phi)
+
+        # 3. Full ODE derivative dN/dt = Assembly - Disassembly 
+        dN_dt = self.gamma * (self.N_tot - N_i) - self.d_0 * d_phi * N_i
+
+        # 4. Forward Euler update step with boundary clipping [1.0, N_tot]  
+        N_next = N_i + dN_dt * dt
+
+        return float(np.clip(N_next, 1.0, self.N_tot))
+    
     def start(self):
         """Initializes HOOMD device, snapshot, topology, and bond integrators."""
+
         self.bead_field = self.create_scalar_field_py("BeadField")
+        self.integrin_field = self.create_scalar_field_py("IntegrinField")
 
         # Device 
         device = hoomd.device.CPU()
@@ -93,16 +137,6 @@ class adhesionsatSteppable(SteppableBasePy):
         self.snapshot.particles.typeid[self.com_particle_idx] = 1  # cell_com
 
         #define the linear bonds between the beads. Either explicitly define the bonds like in example 1 or use a system like 
-        '''
-        self.linear_bonds = []
-        for k in range(self.num_grid_pts):
-            for l in range(k + 1, self.num_grid_pts):
-                # either add [k,l] to the list of bonds or don't
-                if claim:
-                    self.linear_bonds.append([k, l])
-                else:
-                    pass
-        '''
         
         '''#example 1
         self.linear_bonds=[]
@@ -110,7 +144,7 @@ class adhesionsatSteppable(SteppableBasePy):
             self.linear_bonds.append([k,k+1])
         '''
         
-        '''
+        
         #example 2
         self.linear_bonds = []
 
@@ -125,17 +159,15 @@ class adhesionsatSteppable(SteppableBasePy):
             for col in range(10):
                 idx = row * 10 + col
                 self.linear_bonds.append([idx, idx + 10])
-        '''
         
-        #example 3
-        # 1. Define the 5 fibers by their bead IDs
+        
+        '''#example 3
         fiber_chains = [
             [50, 51, 52, 53, 54, 55, 56, 57, 58, 59], # Row 5 (Horizontal)
             [30, 31, 32, 33, 34, 35, 36, 37, 38, 39], # Row 3 (Horizontal)
             [0,  11, 22, 33, 44, 55, 66, 77, 88, 99], # Diagonal (/)
         ]
 
-        # 2. Get linear bonds & pin the fiber ends
         self.linear_bonds = []
         boundary_indices = set()
 
@@ -147,9 +179,7 @@ class adhesionsatSteppable(SteppableBasePy):
                 bond = [chain[i], chain[i+1]]
                 if bond not in self.linear_bonds:
                     self.linear_bonds.append(bond)
-
-        
-        
+        '''
         
         self.snapshot.bonds.N = len(self.linear_bonds) + self.num_grid_pts  # linear bonds + grid-to-COM bonds
         self.snapshot.bonds.types = [ "no_bond","linear_spring", "cyto_spring"]
@@ -197,6 +227,7 @@ class adhesionsatSteppable(SteppableBasePy):
         #----
         
         # Programmatically build angular triplets from linear bonds
+        #There is probably a more efficient way to do this, but I think it's fine as we only have to do it once.
         self.angular_triplets = []
 
         for bond1 in self.linear_bonds:
@@ -205,6 +236,7 @@ class adhesionsatSteppable(SteppableBasePy):
                 i = bond2[0]
                 if i == j:
                     self.angular_triplets.append([bond1[0], bond1[1], bond2[1]])
+        
         
         print('LINEAR BONDS ARE',self.linear_bonds,'\n')
         print('ANGULAR TRIPLETS ARE',self.angular_triplets)
@@ -271,9 +303,7 @@ class adhesionsatSteppable(SteppableBasePy):
         )
 
         self.update_bead_field()
-
-
-
+        self.update_integrin_field()
 
 
 
@@ -332,9 +362,14 @@ class adhesionsatSteppable(SteppableBasePy):
         self.sim.state.set_snapshot(snap)
         self.sim.run(50) # Run sim
 
-        # Update bead field
-        self.update_bead_field()
+        
+        # Integrate Focal Adhesion ODEs (dN/dt) 
+        self.update_fa_integrins(dt=self.md_dt * 50)
 
+        # Update CC3D scalar fields for AdhesiveSatPlugin
+        self.update_integrin_field() 
+        self.update_bead_field()
+        
     def update_bead_field(self):
     # Reset field buffer if tracking is OFF (prevents streaks)
         if not getattr(self, 'track_beads', False):
@@ -346,6 +381,7 @@ class adhesionsatSteppable(SteppableBasePy):
         cc3d_pts = self.hoomd_to_cc3d(hoomd_pts)
         typeids = snap.particles.typeid[: self.num_grid_pts]
 
+        # At this point we might want to use N_i values to color the beads in the BeadField maybe. 
         for (x, y), tid in zip(cc3d_pts, typeids):
             ix, iy = int(round(x)), int(round(y))
             if 0 <= ix < self.dim.x and 0 <= iy < self.dim.y:
@@ -359,5 +395,35 @@ class adhesionsatSteppable(SteppableBasePy):
             cy = int(np.clip(round(cell.yCOM), 0, self.dim.y - 1))
             self.bead_field[cx, cy, 0] = 10.0
 
+    def update_integrin_field(self):
+        """Clear and update the CC3D IntegrinField scalar field with current
+        N_i values from self.fa_integrins so that the C++ AdhesiveSatPlugin
+        can read them during CPM copy attempts.
+        """
+        if not hasattr(self, "integrin_field") or self.integrin_field is None:
+            return
+
+        # 1. Clear previous scalar field values
+        self.integrin_field.clear()
+
+        snap = self.sim.state.get_snapshot()
+
+        # 2. Map HOOMD particle positions to CC3D grid pixels and assign N_i
+        for p_idx, N_i in self.fa_integrins.items():
+            if p_idx >= snap.particles.N:
+                continue
+
+            pos_hoomd = snap.particles.position[p_idx][:2]
+            pos_cc3d = self.hoomd_to_cc3d(pos_hoomd)
+
+            ix = int(np.clip(round(pos_cc3d[0]), 0, self.dim.x - 1))
+            iy = int(np.clip(round(pos_cc3d[1]), 0, self.dim.y - 1))
+
+            # Write current integrin cluster size N_i to the CC3D lattice
+            self.integrin_field[ix, iy, 0] = float(N_i)    
 
 
+'''Initialize FAs in step(): Set self.fa\_integrins[p\_idx] = self.N\_0 when a bead becomes an adhesion site (typeid == 2), and pop it on unbinding. 
+2. Parameter Calibration 
+3. Dynamic Boundaries: Currentlly we define boundary indeces explicitly and it is not gebneral nor convenient.
+'''
