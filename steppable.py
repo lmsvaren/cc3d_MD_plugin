@@ -13,13 +13,19 @@ class adhesionsatSteppable(SteppableBasePy):
         self.bead_field = None
 
         # Simulation parameters
-        self.md_dt = 0.002 #0.003
-        self.md_kT = 0.5 #0.001
+        self.md_dt = 0.002        # 0.003
+        self.md_kT = 0.5          # 0.001
         self.spring_k = 1.0
         self.spring_k_cyto = 1.0
+<<<<<<< Updated upstream
         self.spring_r0 = 0.0
         self.bend_k = 0.5
         self.bend_t0 = np.pi
+=======
+        self.spring_r0 = 0.0  
+        self.bend_k = 0.5         # Angular spring
+        self.bend_t0 = np.pi      # Angular spring
+>>>>>>> Stashed changes
         self.padding = 20.0
 
         self.num_grid_pts = 0
@@ -39,7 +45,7 @@ class adhesionsatSteppable(SteppableBasePy):
         """Initializes HOOMD device, snapshot, topology, and bond integrators."""
         self.bead_field = self.create_scalar_field_py("BeadField")
 
-        # Device
+        # Device 
         device = hoomd.device.CPU()
         self.sim = hoomd.Simulation(device=device, seed=777)
 
@@ -75,6 +81,7 @@ class adhesionsatSteppable(SteppableBasePy):
 
         total_particles = self.num_grid_pts + 1
         snapshot.particles.N = total_particles
+<<<<<<< Updated upstream
         snapshot.particles.types = ["grid_point",  "cell_com", "adhesion_bead", "boundary_bead"] #I would change "grid_point" to "free bead"
 
         linear_bonds = []
@@ -91,20 +98,35 @@ class adhesionsatSteppable(SteppableBasePy):
         '''linear_spring: bonds between free beads
         cyto_spring: bonds between adhesion beads and cell_com
         angular_spring: angles between triplets of beads'''
+=======
+        snapshot.particles.types = ["grid_point", "cell_com", "adhesion_bead", "boundary_bead"] #I would change "grid_point" to "free bead"
+        # Adhesion bead: touching cell
+        # Boundary bead: in the static border
+>>>>>>> Stashed changes
 
 
-        # Populate Snapshot Data
+        ## We don't just have this number of bonds in the system, will have to fix
+        snapshot.bonds.N = 0 #self.num_grid_pts
+        snapshot.bonds.types = ["linear_spring", "no_bond", "cyto_spring"] #no_bond in the 2023, =0
+        snapshot.angles.types =[ "angular_spring", "no_angle"]             #no_angle in the 2023, =0
+
+        '''linear_spring: bonds between free beads
+        cyto_spring: bonds between adhesion beads and cell_com
+        angular_spring: angles between triplets of beads'''
+
+        # Populate Snapshot Data: iterate through all grid points
         for k in range(self.num_grid_pts):
             snapshot.particles.position[k] = all_pts_hoomd_3d[k]
-            snapshot.particles.typeid[k] = 0  # grid_point
+            snapshot.particles.typeid[k] = 0 # grid_point
 
-        snapshot.particles.position[self.com_particle_idx] = all_pts_hoomd_3d[
-            self.com_particle_idx
-        ]
-        snapshot.particles.typeid[self.com_particle_idx] = 1  # cell_com
+            snapshot.particles.position[self.com_particle_idx] = all_pts_hoomd_3d[
+                self.com_particle_idx
+            ]
+            snapshot.particles.typeid[self.com_particle_idx] = 1 # cell_com
 
 
         ## This connects all the adhesion_beads to the cell_com with a cyto_spring bond.
+<<<<<<< Updated upstream
         ## Possibly it needs to be initialized as empty before this loop?
         ## Because if at a later time an adhesion bead turns free, it may retain a bond to the cell_com.
         for k in range(self.num_grid_pts):
@@ -114,6 +136,15 @@ class adhesionsatSteppable(SteppableBasePy):
        
 
        
+=======
+        ## Possibly it needs to be initialized as empty before this loop? 
+        ## Because if at a later time an adhesion bead turns free, it may retain a bond to the cell_com. 
+        for k in range(self.num_grid_pts):
+            if snapshot.particles.typeid[k] == 2: ## if the particle is an adhesion bead
+                snapshot.bonds.group[k] = [k, self.com_particle_idx]
+                snapshot.bonds.typeid[k] = 2 # cyto_spring
+
+>>>>>>> Stashed changes
 
         # Create Simulation State from Snapshot
         self.sim.create_state_from_snapshot(snapshot)
@@ -122,8 +153,11 @@ class adhesionsatSteppable(SteppableBasePy):
         self.integrator = hoomd.md.Integrator(self.md_dt)
 
 
+<<<<<<< Updated upstream
 
 
+=======
+>>>>>>> Stashed changes
         # linear bond potential
         beamspring = hoomd.md.bond.Harmonic()
 
@@ -132,6 +166,7 @@ class adhesionsatSteppable(SteppableBasePy):
             k=self.spring_k, r0=self.spring_r0
         )
 
+<<<<<<< Updated upstream
 
         beamspring.params["no_bond"] = dict(
             k=0, r0=self.spring_r0
@@ -151,6 +186,19 @@ class adhesionsatSteppable(SteppableBasePy):
         ### dummy bond
         harmangle.params['no_angle'] = dict(k=0, t0=0)
        
+=======
+        # bond parameters for the linear spring between cell_com and grid points
+
+        beamspring.params["cyto_spring"] = dict(
+            k= self.spring_k_cyto , r0=self.spring_r0
+        )
+        ## angular bonds
+        harmangle = hoomd.md.angle.Harmonic()
+        harmangle.params['angular_spring'] = dict(k=self.bend_k, t0=self.bend_t0) 
+
+        ### dummy bond 
+        harmangle.params['no_angle'] = dict(k=0, t0=0) 
+>>>>>>> Stashed changes
         self.integrator.forces.append(beamspring)
         self.integrator.forces.append(harmangle)
 
@@ -204,5 +252,15 @@ class adhesionsatSteppable(SteppableBasePy):
 
         for x, y in cc3d_pts:
             ix, iy = int(round(x)), int(round(y))
+<<<<<<< Updated upstream
             if 0 <= ix < self.dim.x and 0 <= iy < self.dim.y:
                 self.bead_field[ix, iy, 0] = 1.0
+=======
+        if 0 <= ix < self.dim.x and 0 <= iy < self.dim.y:
+            self.bead_field[ix, iy, 0] = 1.0
+
+
+
+
+
+>>>>>>> Stashed changes

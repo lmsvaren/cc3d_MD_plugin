@@ -40,20 +40,21 @@ int AdhesiveSatPlugin::getOccupiedSiteCount(const CellG* cell) {
     if (!cell) {
         return 0;
     }
-    pUtils->setLock(lockPtr);
+    // pUtils->setLock(lockPtr);
 
-    const int result = 
-        adhesiveSatDataAccessor.get(
-            cell->extraAttribPtr
-        )->occupiedAdhesiveSites;
+    // const int result = 
+    //     adhesiveSatDataAccessor.get(
+    //         cell->extraAttribPtr
+    //     )->occupiedAdhesiveSites;
 
-    pUtils->unsetLock(lockPtr);
+    // pUtils->unsetLock(lockPtr);
 
-    return result;
+    // Read only for E eval
+    return adhesiveSatDataAccessor.get(cell->extraAttribPtr)->occupiedAdhesiveSites;
 }
 
 void AdhesiveSatPlugin::init(Simulator *simulator, CC3DXMLElement *_xmlData) {
-    initializeBeads(1.0);
+    // initializeBeads(1.0);
     sim = simulator;
     potts = simulator->getPotts();
     cellFieldG = static_cast<WatchableField3D<CellG*> *>(
@@ -389,6 +390,9 @@ void AdhesiveSatPlugin::checkBeadCellAttribution() {
     Field3D<CellG*>* cellFieldG = potts->getCellFieldG();
     if (!cellFieldG) return;
 
+    const double offsetX = fieldDim.x / 2.0;
+    const double offsetY = fieldDim.y / 2.0;
+
     std::cout << "==========================================" << std::endl;
     std::cout << "[AdhesiveSatPlugin] Checking Bead Cell Mapping:" << std::endl;
 
@@ -417,6 +421,7 @@ void AdhesiveSatPlugin::checkBeadCellAttribution() {
 void AdhesiveSatPlugin::extraInit(Simulator* simulator) {
     // initializeYField();
     initializeGridField();
+    initializeBeads(1.0);
     // initializeBeads(1.0); // Creates beads every 1.0 unit along fibers
     initializeOccupiedSiteCounts();
     checkBeadCellAttribution();
