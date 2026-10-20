@@ -66,11 +66,11 @@ class FiberPlotterSteppable(SteppableBasePy):
         boundary_pts = pts_cc3d[typeids == 3]
 
         if len(free_pts) > 0:
-            ax.scatter(free_pts[:, 0], free_pts[:, 1], c='blue', s=10, label='Free Bead', zorder=4)
+            ax.scatter(free_pts[:, 0], free_pts[:, 1], c='blue', s=5, label='Free Bead', zorder=4)
         if len(adhesion_pts) > 0:
-            ax.scatter(adhesion_pts[:, 0], adhesion_pts[:, 1], c='red', s=25, label='Focal Adhesion', zorder=5)
+            ax.scatter(adhesion_pts[:, 0], adhesion_pts[:, 1], c='red', s=2, label='Focal Adhesion', zorder=5)
         if len(boundary_pts) > 0:
-            ax.scatter(boundary_pts[:, 0], boundary_pts[:, 1], c='black', s=15, label='Boundary Anchor', zorder=4)
+            ax.scatter(boundary_pts[:, 0], boundary_pts[:, 1], c='black', s=5, label='Boundary Anchor', zorder=4)
 
         # Formatting
         ax.set_xlim(0, self.dim.x)
@@ -95,26 +95,40 @@ class testHybridSteppable(SteppableBasePy):
     
         self.bead_field = None
         self.integrin_field = None
-        self.active_bonds = {}  # Dictionary to track active bonds between adhesion beads and cell COM
+        # self.active_bonds = {}     # Dictionary to track active bonds between adhesion beads and cell COM
+        self.padding = 20.0          # 20; Padding for bead field
+        self.site_size = 0.25e-6     # micrometer (um)
 
         # Simulation parameters (K_cross = K_polymer, need to add K_cross)
-        self.md_dt = 0.0001 #0.0001
-        self.md_kT = 0.001 #0.001
-        self.spring_k = 10 #100
-        self.spring_k_cyto = 10 #100
-        self.spring_r0 = 20 #20
-        self.bend_k = 10.0 #10.0
-        self.bend_t0 = np.pi #np.pi
-        self.padding = 20.0 #20
+        self.md_dt = 0.1             # 0.0001; MD time iterations
+        self.md_kT = 0.001           # 0.001; kT for Brownian motion and thermalize_particle_momenta
+        self.spring_k = 0.09         # 100; linear spring constant
+        self.crosslink_k = 0.09
+        self.crosslink_r0 = 3
 
+        # # Additional cross link values from Tsingos et al
+        # crosslink_quant_step = 0.3 # minimum crosslinker distance and quantization step
+        # crosslink_max_r = 3        # maximum crosslinker distance   
+        # crosslink_bin_size = 1/3
+
+        self.spring_k_cyto = 3.10e-4 #10; spring constant for cytoskeleton
+        self.spring_r0_cyto = 0
+
+        self.spring_r0 = 5           # 6.25; spring resting length
+        self.bend_k = 3.88e-15       # 10.0; angular spring constant
+        self.bend_t0 = np.pi         # np.pi; equilibrium angle (theta_0 in radians)
+        self.gamma_drag = 10
+        
         # Parameters for eq. 4: Catch-slip (FAs are modeled as clusters of catch-slip bonds)
-        self.gamma = 1.0 #1.0; Binding rate of integrings
-        self.N_tot = 100.0 #100; max number of integrin in an FA allowed 
-        self.d_0 = 1.0 #1; Base detachment rate
-        self.N_0 = 1.0 #1
-        self.f_star = 1.0 #1; force scale
-        self.phi_s = 1.0  #1; Slip regime
-        self.phi_c = 1.0 #1; Catch regime
+        self.gamma_ode = 2.88        # 1.0; Binding rate of integrings
+        self.N_tot = 390.0           # 100; max number of integrin in an FA allowed 
+        self.d_0 = 2.88e-2           # 1; Base detachment rate
+        self.N_0 = 1.0               # 1; Minimum boundary for n integrins (NEED??)
+        self.f_star = 1.29e10        # 1; force scale
+        self.phi_s = 4.02            # 1; Slip regime
+        self.phi_c = 7.76            # 1; Catch regime
+
+        self.md_steps_per_mcs = 200 # number of MD steps to run in HOOMD (Tsingos et al did 200)
 
         # Dictionary tracking integrin cluster size for active FAs: {particle_idx: N_i}
         self.fa_integrins = {}
@@ -124,7 +138,6 @@ class testHybridSteppable(SteppableBasePy):
         self.track_beads = False  # Set to True to enable trails/streaks
 
 ### Change of coordinates from CC3D to HOOMD and vice versa. CC3D has a domain of [0, dim] while HOOMD has a centered domain of [-Lx/2, Lx/2].
-
     def cc3d_to_hoomd(self, pos_2d):
         """Shifts CC3D domain [0, dim] to HOOMD centered domain [-Lx/2, Lx/2]."""
         offset = np.array([self.dim.x / 2.0, self.dim.y / 2.0])
@@ -136,16 +149,19 @@ class testHybridSteppable(SteppableBasePy):
         return pos_2d + offset
         
 
+### Eq 4: catch slip 
     def catch_slip_rate(self, phi):
         """Calculates dimensionless dissociation rate d(phi) according to eq. 4:
-        d(phi) = exp(phi - phi_s) + exp(-phi)
+
+            d(phi) = exp(phi - phi_s) + exp(phi_c-phi)
+
         """
-        return np.exp(phi - self.phi_s) + np.exp(self.phi_c-phi)
+        return np.exp(phi - self.phi_s) + np.exp(self.phi_c - phi)
 
     def integrate_catch_slip(self, N_i, Phi, dt):
         """
         Integrates focal adhesion integrin turnover (dN/dt) over time step dt
-        according to Keijzer et al. Eq. 4 [1]:
+        according to Keijzer et al. Eq. 4:
 
             dN/dt = gamma * (N_tot - N_i) - d_0 * d(phi) * N_i
 
@@ -153,124 +169,132 @@ class testHybridSteppable(SteppableBasePy):
             N_i (float): Current integrin cluster size (FA size).
             Phi (float): Mechanical force/tension on the focal adhesion.
             dt (float): Integration time step.
+            N_0 (1): to prevent scaling of phi or dN/dt
         """
-        # Compute dimensionless tension per integrin: phi = (f_star * Phi) / N_i
-        phi = (self.f_star * Phi) / max(N_i, 1.0)
+        # Compute dimensionless tension per integrin: 
+        # phi = (f_star * Phi) / N_i
+        phi = (self.f_star * Phi) / max(N_i, self.N_0) # Should be N_i unless N_i=0
 
         # Unbinding rate function d(phi)
+        # d(phi) = exp(phi - phi_s) + exp(phi_c-phi)
         d_phi = self.catch_slip_rate(phi)
 
         # Full ODE derivative dN/dt = Assembly - Disassembly 
-        dN_dt = self.gamma * (self.N_tot - N_i) - self.d_0 * d_phi * N_i
+        # dN/dt = gamma * (N_tot - N_i) - d_0 * d(phi) * N_i
+        dN_dt = self.gamma_ode * (self.N_tot - N_i) - self.d_0 * d_phi * N_i
 
-        # Forward Euler update step with boundary clipping [1.0, N_tot]  
+        # Forward Euler update step with boundary clipping [1.0, N_tot] 
+        # CHANGE SOLVER??? O(h)
         N_next = N_i + dN_dt * dt
 
-        return float(np.clip(N_next, self.N_0, self.N_tot))
+        return float(np.clip(N_next, self.N_0, self.N_tot)) #np.clip(a, a_min, a_max,)
     
-    def setup_fibers(self, fiber_chains):
+    def setup_fibers(self, fiber_chains, edge_width=5):
         """Parse thorugh user input fibers"""
         pos_map = {}            # Maps rounded (x, y) tuple -> particle index
         all_pts_cc3d = []
         linear_bonds = []
         angular_triplets = []
-        boundary_indices = set()
+        chain_members = []
+        end_beads = []
+        crosslink_bonds = set()
 
-        #Iter through each fiber
-        for raw_chain in fiber_chains:
+        # Iter through each fiber
+        for chain_id, raw_chain in enumerate(fiber_chains):
             chain = raw_chain#[::50]
             if len(raw_chain) > 1 and raw_chain[-1] != chain[-1]:
                 chain.append(raw_chain[-1])
             chain_indices = []
+
             # assign particle IDs to each node, deduplicate the nodes
             for pt in chain:
                 pt_key = (round(float(pt[0])), round(float(pt[1]))) #2d coords
+
                 # Add pos to mapping if not there already
                 if pt_key not in pos_map:
                     idx = len(all_pts_cc3d)
                     pos_map[pt_key] = idx #id to pos
                     all_pts_cc3d.append([pt_key[0], pt_key[1]]) #2d coords
+
                 chain_indices.append(pos_map[pt_key])
 
-            # Endpoints of each fiber are chains
-            # CHANGE TO WITHIN A SPECIFIC BORDER
-            boundary_indices.add(chain_indices[0])
-            boundary_indices.add(chain_indices[-1])
+            # Endpoints of each fiber are chain linked 
+            chain_members.append(set(chain_indices))
+            end_beads.append((chain_indices[0], chain_id))
+            end_beads.append((chain_indices[-1], chain_id))
 
             # Linear bonds
             for i in range(len(chain_indices) - 1):
                 bond = sorted([chain_indices[i], chain_indices[i + 1]]) #[i, i+1]
                 if bond not in linear_bonds:
-                    linear_bonds.append(bond)
+                    linear_bonds.append(bond) # MAKE MORE EFFICIENT??
 
             # Angular triplets
             for i in range(len(chain_indices) - 2):
                 triplet = [chain_indices[i], chain_indices[i + 1], chain_indices[i + 2]] #[i, i+1, i+2]
                 angular_triplets.append(triplet)
+
+        pts = np.array(all_pts_cc3d)
+
+        # Cross link bonds
+        for end_idx, chain_id in end_beads:
+            d2 = np.sum((pts - pts[end_idx]) ** 2, axis=1).astype(float) # Euclidean distance from bead and pt
+            d2[list(chain_members[chain_id])] = np.inf # exclude self
+            nearest = int(np.argmin(d2)) # get the nearest
+            if np.isfinite(d2[nearest]):
+                crosslink_bonds.add((min(end_idx, nearest), max(end_idx, nearest)))
+
+        # Added to freeze the edge beads within 5 pixels of the edge
+        near_x = (pts[:, 0] <= edge_width) | (pts[:, 0] >= self.dim.x - edge_width)
+        near_y = (pts[:, 1] <= edge_width) | (pts[:, 1] >= self.dim.y - edge_width)
+        frozen_indices = set(np.flatnonzero(near_x | near_y).tolist())
+            
         return (
             np.array(all_pts_cc3d),
             linear_bonds,
             angular_triplets,
-            boundary_indices
+            [list(b) for b in crosslink_bonds], # set --> list
+            frozen_indices
         )
 
     def start(self):
         """Initializes HOOMD device, snapshot, topology, and bond integrators."""
 
+        # Initiate the required fields
         self.bead_field = self.create_scalar_field_py("BeadField")
         self.integrin_field = self.create_scalar_field_py("IntegrinField")
         self.fiber_field = self.create_vector_field_py("FiberField")
 
         # Device and simulation
-        device = hoomd.device.CPU()
+        device = hoomd.device.CPU() #Eventually make is so either GPU or CPU
         self.sim = hoomd.Simulation(device=device, seed=777)
 
-        # DUMMY FIBERS (200,200)
-        # user_fibers = [
-        #     # Horizontal chain
-        #     [(10, 50), (30, 50), (50, 50), (70, 50), (90, 50)],
-        #     # Diagonal chain intersecting Fiber 1
-        #     [(20, 20), (35, 35), (50, 50), (65, 65), (80, 80)],
-        #     # Vertical chain
-        #     [(50, 10), (50, 30), (50, 50), (50, 70), (50, 90)]
-        # ]
-        # Hardcoded dense fiber network spanning [0, 200] x [0, 200]
-        
+        # Set up snapshot
+        self.snapshot = hoomd.Snapshot()
+
+        # Snapshot & Box Setup for HOOMD
+        BOX_X = self.dim.x + (2.0 * self.padding) # dim + 2*padding (for each side)
+        BOX_Y = self.dim.y + (2.0 * self.padding)
+
+        self.snapshot.configuration.box = [BOX_X, BOX_Y, 0, # [Lx, Ly, Lz,
+                                           0, 0, 0] # xy, xz, yz] tilt factors
+        # Tsingos et al 2023 has a loading_margin
+
+
+        #############################################################################
         # GRID OF FIBERS
-        user_fibers = [
-            # HORIZONTAL FIBERS (y = 10 to 190, step 20)
-            [(x, 10) for x in range(10, 191, 20)],
-            [(x, 30) for x in range(10, 191, 20)],
-            [(x, 50) for x in range(10, 191, 20)],
-            [(x, 70) for x in range(10, 191, 20)],
-            [(x, 90) for x in range(10, 191, 20)],
-            [(x, 110) for x in range(10, 191, 20)],
-            [(x, 130) for x in range(10, 191, 20)],
-            [(x, 150) for x in range(10, 191, 20)],
-            [(x, 170) for x in range(10, 191, 20)],
-            [(x, 190) for x in range(10, 191, 20)],
-
-            # VERTICAL FIBERS (x = 10 to 190, step 20)
-            [(10, y) for y in range(10, 191, 20)],
-            [(30, y) for y in range(10, 191, 20)],
-            [(50, y) for y in range(10, 191, 20)],
-            [(70, y) for y in range(10, 191, 20)],
-            [(90, y) for y in range(10, 191, 20)],
-            [(110, y) for y in range(10, 191, 20)],
-            [(130, y) for y in range(10, 191, 20)],
-            [(150, y) for y in range(10, 191, 20)],
-            [(170, y) for y in range(10, 191, 20)],
-            [(190, y) for y in range(10, 191, 20)],]
-
-        #     # DIAGONAL CROSS-LINKING FIBERS (Interwoven across domain)
-        #     [(x, x) for x in range(10, 191, 20)],                      # Main diagonal /
-        #     [(x, 200 - x) for x in range(10, 191, 20)],                # Anti diagonal \
-        #     [(x, x + 40) for x in range(10, 151, 20)],                 # Upper diagonal /
-        #     [(x + 40, x) for x in range(10, 151, 20)],                 # Lower diagonal /
-        # ]
+        n = 200
+        step = 5
+        user_fibers = (
+            # HORIZONTAL FIBERS (y = 10 to 190, step 5)
+            [[(x, y) for x in range(0, n, step)] for y in range(0, n, step)] +
+            
+            # VERTICAL FIBERS (x = 10 to 190, step 5)
+            [[(x, y) for y in range(0, n, step)] for x in range(0, n, step)]
+        )
         
         # # OUR SPLINES
-        # with open('/Users/svaren/Downloads/testing_sim/shg_splines_42.json', 'r', encoding='utf-8') as file:
+        # with open('/Users/svaren/Downloads/shg_splines_42.json', 'r', encoding='utf-8') as file:
             # data = json.load(file)
         # user_fibers = data['splines']
         
@@ -278,25 +302,17 @@ class testHybridSteppable(SteppableBasePy):
         # spline_coords = [(375, y) for y in range(0, 501, 5)]
         # user_fibers = [spline_coords]
         
-        # user_fibers = [[(round(float(pt[0])), round(float(pt[1]))) for pt in chain] for chain in user_fibers]
 
-        # Grid & Particle Assembly
-        # grid_spacing = 20
-        # pad = 0 #edge padding
-        # x_pts = np.arange(pad, self.dim.x - pad, grid_spacing) 
-        # y_pts = np.arange(pad, self.dim.y - pad, grid_spacing)
-        # Nx, Ny = len(x_pts), len(y_pts)
-
-        # X, Y = np.meshgrid(x_pts, y_pts)
-        # grid_points_cc3d = np.column_stack((X.ravel(), Y.ravel()))
-
+        #############################################################################
         # Get bonds/triplets info from fibers
-        grid_points_cc3d, self.linear_bonds, self.angular_triplets, boundary_indices = self.setup_fibers(user_fibers)
+        grid_points_cc3d, self.linear_bonds, self.angular_triplets, crosslink_bonds, frozen_indices = self.setup_fibers(user_fibers) #crosslink_indices
 
         self.num_grid_pts = len(grid_points_cc3d)
 
         # Cell COM 
-        cell = next(iter(self.cell_list), None)
+        cell = next(iter(self.cell_list), None) # Return the first cell in cell list
+
+        # Find the cell center of mass (COM)
         cell_com_cc3d = (
             np.array([[cell.xCOM, cell.yCOM]])
             if cell
@@ -309,137 +325,44 @@ class testHybridSteppable(SteppableBasePy):
 
         self.com_particle_idx = self.num_grid_pts #The last particle in the snapshot is the cell COM particle
 
-        # Snapshot & Box Setup for HOOMD
-        BOX_X = self.dim.x + (2.0 * self.padding)
-        BOX_Y = self.dim.y + (2.0 * self.padding)
-
-        self.snapshot = hoomd.Snapshot()
-        self.snapshot.configuration.box = [BOX_X, BOX_Y, 0, 0, 0, 0]
-
+        # N particles will change if more than one cells
         self.snapshot.particles.N = self.num_grid_pts + 1 #this is the total number of particles in the simulation (grid points + cell COM)
-        self.snapshot.particles.types = ["grid_point",  "cell_com", "adhesion_bead", "boundary_bead"] #I would change "grid_point" to "free bead"
+        self.snapshot.particles.types = ["free_bead",  "cell_com", "adhesion_bead", "boundary_bead"] # 0-3 idx
 
-        # Boundary indices (previously below the follwoing section)
-        # boundary_indices = set()
-        # for r in range(Ny):
-        #     for c in range(Nx):
-        #         idx = r * Nx + c
-        #         if r == 0 or r == Ny-1 or c == 0 or c == Nx-1:
-        #             boundary_indices.add(idx)
-
-    
-        # Populate Snapshot Data
+        # Populate Snapshot Data with beads
         for k in range(self.num_grid_pts):
-            self.snapshot.particles.position[k] = all_pts_hoomd_3d[k]
-            if k in boundary_indices: #this was changed
-                self.snapshot.particles.typeid[k] = 3  # boundary bead
-            else:
-                self.snapshot.particles.typeid[k] = 0 # grid point
 
+            self.snapshot.particles.position[k] = all_pts_hoomd_3d[k]
+
+            if k in frozen_indices:
+                self.snapshot.particles.typeid[k] = 3 # Cross link bead
+            else:
+                self.snapshot.particles.typeid[k] = 0 # Free bead
+
+        # Cell COM
         self.snapshot.particles.position[self.com_particle_idx] = all_pts_hoomd_3d[self.com_particle_idx]
         self.snapshot.particles.typeid[self.com_particle_idx] = 1  # cell_com
 
-        #define the linear bonds between the beads. Either explicitly define the bonds like in example 1 or use a system like 
-        
-        '''#example 1
-        self.linear_bonds=[]
-        for k in range(50,59):
-            self.linear_bonds.append([k,k+1])
-        '''
-        
-        
-        # #example 2: Linear Bonds
-        # self.linear_bonds = []
-
-        # #Horizontal bonds
-        # for row in range(Ny):
-        #     for col in range(Nx-1):
-        #         idx = row * Nx + col
-        #         self.linear_bonds.append([idx, idx + 1])
-
-        # # Vertical bonds
-        # for row in range(Ny-1):
-        #     for col in range(Nx):
-        #         idx = row * Nx + col
-        #         self.linear_bonds.append([idx, idx + Nx])
-        
-        
-        '''#example 3
-        fiber_chains = [
-            [50, 51, 52, 53, 54, 55, 56, 57, 58, 59], # Row 5 (Horizontal)
-            [30, 31, 32, 33, 34, 35, 36, 37, 38, 39], # Row 3 (Horizontal)
-            [0,  11, 22, 33, 44, 55, 66, 77, 88, 99], # Diagonal (/)
-        ]
-
-        self.linear_bonds = []
-        boundary_indices = set()
-
-        for chain in fiber_chains:
-            boundary_indices.add(chain[0])   # Pin start of fiber
-            boundary_indices.add(chain[-1])  # Pin end of fiber
-            
-            for i in range(len(chain) - 1):
-                bond = [chain[i], chain[i+1]]
-                if bond not in self.linear_bonds:
-                    self.linear_bonds.append(bond)
-        '''
-        
+        # Populate Snapshot Data with bonds
         self.snapshot.bonds.N = len(self.linear_bonds) + self.num_grid_pts  # total bonds = linear bonds + grid-to-COM bonds;
-        self.snapshot.bonds.types = [ "no_bond","linear_spring", "cyto_spring"]
-        # self.snapshot.angles.types =[ "no_angle", "angular_spring"]
+        self.snapshot.bonds.types = [ "no_bond","linear_spring", "cyto_spring", "crosslink"]
 
         # Create linear bonds in snapshot
         for i, pair in enumerate(self.linear_bonds):
             self.snapshot.bonds.group[i] = pair
             self.snapshot.bonds.typeid[i] = 1  # linear_spring
 
-        # Create grid-to-COM bonds ONLY for grid points (excludes com_particle_idx)
+        # # Create cross link bonds
+        # for i, pair in enumerate(crosslink_bonds):
+        #     self.snapshot.bonds.group[i] = pair
+        #     self.snapshot.bonds.typeid[i] = 3
+
+        # Create bead-to-COM bonds ONLY for free beads (excludes com_particle_idx)
         for i in range(self.num_grid_pts):
             bond_idx = i + len(self.linear_bonds)
             self.snapshot.bonds.group[bond_idx] = [i, self.com_particle_idx]
-            # if self.snapshot.particles.typeid[i] == 2:  # adhesion bead
-            #     self.snapshot.bonds.typeid[bond_idx] = 2  # cyto_spring
-            # else:
             self.snapshot.bonds.typeid[bond_idx] = 0  # no_bond, default
 
-
-        # MOVED ABOVE
-        #         # Generate the boundary index set for a 10x10 grid (0-9, 90-99, 10k, 10k+9)
-        # boundary_indices = set()
-
-        # #----
-        # # Top and Bottom rows
-        # boundary_indices.update(range(0, 10))        # 0 through 9
-        # boundary_indices.update(range(90, 100))     # 90 through 99
-
-        # # Left and Right edges
-        # for k in range(10):
-        #     boundary_indices.add(10 * k)             # 0, 10, 20, ... 90
-        #     boundary_indices.add(10 * k + 9)         # 9, 19, 29, ... 99
-
-
-        # # Assign typeids in snapshot initialization
-        # for k in range(self.num_grid_pts):
-        #     self.snapshot.particles.position[k] = all_pts_hoomd_3d[k]
-            
-        #     if k in boundary_indices:
-        #         self.snapshot.particles.typeid[k] = 3  # boundary_bead
-        #     else:
-        #         self.snapshot.particles.typeid[k] = 0  # grid_point
-        # #----
-        
-        # Programmatically build angular triplets from linear bonds
-        #There is probably a more efficient way to do this, but I think it's fine as we only have to do it once.
-        # self.angular_triplets = []
-
-        # for bond1 in self.linear_bonds:
-        #     j = bond1[1]
-        #     for bond2 in self.linear_bonds:
-        #         i = bond2[0]
-        #         if i == j:
-        #             self.angular_triplets.append([bond1[0], bond1[1], bond2[1]])
-        
-        
         # print('LINEAR BONDS ARE',self.linear_bonds,'\n')
         # print('ANGULAR TRIPLETS ARE',self.angular_triplets)
 
@@ -451,15 +374,20 @@ class testHybridSteppable(SteppableBasePy):
             self.snapshot.angles.group[idx] = triplet
             self.snapshot.angles.typeid[idx] = 1  # angular_spring
 
+
+        print("\nHOOMD Snapshot")
+        print("Particle types:      ", self.snapshot.particles.types)
+        print("Linear bond types:   ", self.snapshot.bonds.types)
+        print("Angular bond types:  ", self.snapshot.angles.types)
+        print()
+
+
         # Create Simulation State from Snapshot
         self.sim.create_state_from_snapshot(self.snapshot)
 
-        # Integrator Setup (Bonds Only â€” No Pair/LJ Potentials)
+        # Integrator Setup
         self.integrator = hoomd.md.Integrator(self.md_dt)
-
         
-
-
         # linear bond potential
         beamspring = hoomd.md.bond.Harmonic()
 
@@ -468,18 +396,28 @@ class testHybridSteppable(SteppableBasePy):
             k=self.spring_k, r0=self.spring_r0
         )
 
+        # # Cross link bonds
+        # NEED TO EDIT 
+        beamspring.params["crosslink"] = dict(
+            k=self.crosslink_k, r0=self.crosslink_r0
+        )
+
+        # No bond
         beamspring.params["no_bond"] = dict(
             k=0, r0=self.spring_r0
         )
-        
+
         # bond parameters for the linear spring between cell_com and grid points
         beamspring.params["cyto_spring"] = dict(
-                    k= self.spring_k_cyto , r0=self.spring_r0
+                    k= self.spring_k_cyto , r0=self.spring_r0_cyto
                 )
-            
+
         ## angular bonds
         harmangle = hoomd.md.angle.Harmonic()
+
         harmangle.params['angular_spring'] = dict(k=self.bend_k, t0=self.bend_t0) 
+
+
 
         ### dummy bond 
         harmangle.params['no_angle'] = dict(k=0, t0=0) 
@@ -487,18 +425,25 @@ class testHybridSteppable(SteppableBasePy):
         self.integrator.forces.append(beamspring)
         self.integrator.forces.append(harmangle)
 
-
         # Integration Method (Langevin Thermostat for grid points)
-        free_particlefilter = hoomd.filter.Type(["grid_point", "adhesion_bead"])
+        free_particlefilter = hoomd.filter.Type(["free_bead", "adhesion_bead"])
+        # Over damped Langevin
         integration_method = hoomd.md.methods.Brownian(
             free_particlefilter, kT=self.md_kT
         )
-        self.integrator.methods.append(integration_method)
 
+        # Add gamma value to free bead
+        integration_method.gamma['free_bead'] = self.gamma_drag # gamma['adhesion_bead'] defaults to 1
+
+        self.integrator.methods.append(integration_method)
         self.sim.operations.integrator = self.integrator
-        self.sim.state.thermalize_particle_momenta(
-            filter=free_particlefilter, kT=self.md_kT
-        )
+
+        # self.sim.state.thermalize_particle_momenta(
+        #     filter=free_particlefilter, kT=self.md_kT
+        # )
+
+        # Relax field for 1000 steps
+
 
         self.update_bead_field()
         self.update_integrin_field()
@@ -512,8 +457,10 @@ class testHybridSteppable(SteppableBasePy):
         # Iterate through all the fa_integrins (dict)
         for p_idx in list(self.fa_integrins.keys()):
             pos = snap.particles.position[p_idx][:2] #specific integrin pos
-            dist = np.linalg.norm(pos-com_pos) #dist to com
-            tension = self.spring_k_cyto * max(0.0, dist - self.spring_r0) #F = k * max(0, r - r0)
+            dist = np.linalg.norm(pos-com_pos) #dist to comx
+
+            # Phi
+            tension = self.spring_k_cyto * dist * self.site_size # CHECK IF THIS IS RIGHT, site_size for unit check
 
             # Update focal adhesion integrin size
             n_curr = self.fa_integrins[p_idx]
@@ -528,7 +475,7 @@ class testHybridSteppable(SteppableBasePy):
                 cell_pixels.add((pt.pixel.x, pt.pixel.y))
                 
                 
-        # HOOMD snapshot
+        # HOOMD current snapshot
         snap = self.sim.state.get_snapshot()
 
         if snap.communicator.rank == 0:
@@ -546,27 +493,38 @@ class testHybridSteppable(SteppableBasePy):
 
             # Grid particle position against cell pixel locations
             hoomd_pts = snap.particles.position[: self.num_grid_pts, :2]
+
+            # Convert coordinates
             cc3d_pts = self.hoomd_to_cc3d(hoomd_pts)
             
-            
+            # Iterate through particles
             for particle_idx, (px, py) in enumerate(cc3d_pts):
                 current_type = snap.particles.typeid[particle_idx]
-                if current_type == 3 or current_type == 1:
+
+                # Continue if free_bead or boundary_bead (Leaves linear and cyto spring)
+                if current_type == 3 or current_type == 1: 
                     continue
+
+                # Get coordinates
                 ix, iy = int(round(px)), int(round(py))
+
+                # For the particles within a cell pixel
                 if (ix, iy) in cell_pixels:
-                    snap.particles.typeid[particle_idx] = 2 #adhesion bead
-                    # self.active_bonds[particle_idx] = [particle_idx, self.com_particle_idx]
+                    # Make all particles FAs
+                    snap.particles.typeid[particle_idx] = 2 # adhesion bead (FA)
+                    
+                    # If the particle is not fa_integrins already, add it as new cite
                     if particle_idx not in self.fa_integrins:
                         self.fa_integrins[particle_idx] = self.N_0 #initialize new site
                 else:
                     if current_type == 2:
-                        snap.particles.typeid[particle_idx] = 0 # grid point
-                        self.active_bonds.pop(particle_idx, None)
+                        snap.particles.typeid[particle_idx] = 0 # Make free bead
+                        self.fa_integrins.pop(particle_idx, None) # Remove from fa_integrins dict
 
             # Apply state directly to snapshot bond types
             for i in range(self.num_grid_pts):
                 bond_idx = i + len(self.linear_bonds)
+
                 if snap.particles.typeid[i] == 2:  # adhesion bead
                     snap.bonds.typeid[bond_idx] = 2  # cyto_spring
                 else:
@@ -575,12 +533,11 @@ class testHybridSteppable(SteppableBasePy):
         # Particle updates back to HOOMD
         self.sim.state.set_snapshot(snap)
 
-        md_steps_per_mcs = 50
-        self.sim.run(md_steps_per_mcs) # Run sim
+        self.sim.run(self.md_steps_per_mcs) # Run sim
         
         # Integrate Focal Adhesion ODEs (dN/dt) 
         # Catch-slip ODE integration
-        self.update_fa_integrins(dt=self.md_dt * md_steps_per_mcs)
+        self.update_fa_integrins(dt=self.md_dt * self.md_steps_per_mcs)
 
         # Update CC3D scalar fields for AdhesiveSatPlugin
         self.update_integrin_field() 
@@ -598,20 +555,6 @@ class testHybridSteppable(SteppableBasePy):
         hoomd_pts = snap.particles.position[: self.num_grid_pts, :2]
         cc3d_pts = self.hoomd_to_cc3d(hoomd_pts)
         typeids = snap.particles.typeid[: self.num_grid_pts]
-
-        # # At this point we might want to use N_i values to color the beads in the BeadField maybe. 
-        # for (x, y), tid in zip(cc3d_pts, typeids):
-        #     ix, iy = int(round(x)), int(round(y))
-        #     if 0 <= ix < self.dim.x and 0 <= iy < self.dim.y:
-        #         # +1 avoids ambiguity with the cleared background value of 0
-        #         self.bead_field[ix, iy, 0] = float(tid) + 1.0
-
-        # # Draw COM pixel directly onto BeadField with a distinct scalar value
-        # cell = next(iter(self.cell_list), None)
-        # if cell:
-        #     cx = int(np.clip(round(cell.xCOM), 0, self.dim.x - 1))
-        #     cy = int(np.clip(round(cell.yCOM), 0, self.dim.y - 1))
-        #     self.bead_field[cx, cy, 0] = 10.0
 
         for (x, y), tid in zip(cc3d_pts, typeids):
             ix = int(np.clip(round(x), 0, self.dim.x - 1))
@@ -638,6 +581,7 @@ class testHybridSteppable(SteppableBasePy):
         snap = self.sim.state.get_snapshot()
 
         # Map HOOMD particle positions to CC3D grid pixels and assign N_i
+        N_i_totals = {}
         for p_idx, N_i in self.fa_integrins.items():
             if p_idx >= snap.particles.N:
                 continue
@@ -647,9 +591,12 @@ class testHybridSteppable(SteppableBasePy):
 
             ix = int(np.clip(round(pos_cc3d[0]), 0, self.dim.x - 1))
             iy = int(np.clip(round(pos_cc3d[1]), 0, self.dim.y - 1))
+            
+            N_i_totals[(ix, iy)] = N_i_totals.get((ix,iy), 0.0) + float(N_i) # Add number of integrins
 
             # Write current integrin cluster size N_i to the CC3D lattice
-            self.integrin_field[ix, iy, 0] = float(N_i)    
+        for (ix, iy), total in N_i_totals.items():
+            self.integrin_field[ix, iy, 0] = total 
 
     def update_fiber_field(self):
         """Draws directional line segments for all linear bonds in the CC3D lattice."""

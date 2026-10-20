@@ -11,12 +11,12 @@
    </Metadata>
    
    <Potts>
-      
       <!-- Basic properties of CPM (GGH) algorithm -->
       <Dimensions x="200" y="200" z="1"/>
       <Steps>100000</Steps>
-      <Temperature>10.0</Temperature>
-      <NeighborOrder>1</NeighborOrder>
+      <Temperature>10.0</Temperature> 
+      <!-- Temp was 10.0 -->
+      <NeighborOrder>2</NeighborOrder>
    </Potts>
    
    <Plugin Name="PixelTracker">
@@ -30,6 +30,7 @@
       <!-- Listing all cell types in the simulation -->
       <CellType TypeId="0" TypeName="Medium"/>
       <CellType TypeId="1" TypeName="cellA"/>
+      <!-- <CellType TypeId="2" TypeName="cellB"/> -->
    </Plugin>
    
    <Plugin Name="CenterOfMass">
@@ -45,13 +46,17 @@
    <Plugin Name="Contact">
       <!-- Specification of adhesion energies -->
       <Energy Type1="Medium" Type2="Medium">0</Energy>
-      <Energy Type1="Medium" Type2="cellA">10.0</Energy>
-      <Energy Type1="cellA" Type2="cellA">0.0</Energy>
+      <Energy Type1="Medium" Type2="cellA">50.0</Energy>
+      <!-- <Energy Type1="Medium" Type2="cellB">50.0</Energy> -->
+      <Energy Type1="cellA" Type2="cellA">50.0</Energy>
+      <!-- <Energy Type1="cellB" Type2="cellB">50.0</Energy> -->
+      <!-- <Energy Type1="cellA" Type2="cellB">10000.0</Energy> -->
       <NeighborOrder>2</NeighborOrder>
    </Plugin>
    
    <Plugin Name="Volume">
-       <VolumeEnergyParameters CellType="cellA" LambdaVolume="2.0" TargetVolume="10000"/>
+       <VolumeEnergyParameters CellType="cellA" LambdaVolume="60.0" TargetVolume="3000"/>
+       <!-- <VolumeEnergyParameters CellType="cellB" LambdaVolume="60.0" TargetVolume="3000"/> -->
     </Plugin>
     
     
@@ -59,11 +64,11 @@
    <Plugin Name="AdhesiveSat">
    
       <!-- Non-Integrin Substrate Adhesion -->
-      <!-- Strength parameter -->
-      <lambdaC>50.0</lambdaC> 
+      <!-- Strength parameter 50.0-->
+      <lambdaC>3.87e-13</lambdaC> 
       
-      <!-- Saturation parameter -->
-      <Aref>250.0</Aref>
+      <!-- Saturation parameter (should be area of the cell)-->
+      <Aref>3000.0</Aref>
       
       
       <!-- Focal adhesion penalty for breaking integrin bonds -->
@@ -90,12 +95,20 @@
          <!-- <Types>cellA</Types> -->
       <!-- </Region> -->
       <Region>
-         <BoxMin x="50" y="50" z="0"/>
-         <BoxMax x="150" y="150" z="1"/>
+         <BoxMin x="90" y="90" z="0"/>
+         <BoxMax x="110" y="110" z="1"/>
          <Gap>0</Gap>
-         <Width>100</Width>
+         <Width>20</Width>
          <Types>cellA</Types>
       </Region>
+      
+      <!-- <Region> -->
+         <!-- <BoxMin x="120" y="100" z="0"/> -->
+         <!-- <BoxMax x="140" y="120" z="1"/> -->
+         <!-- <Gap>0</Gap> -->
+         <!-- <Width>20</Width> -->
+         <!-- <Types>cellB</Types> -->
+      <!-- </Region> -->
       
    </Steppable>
 </CompuCell3D>
