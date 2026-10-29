@@ -1,0 +1,114 @@
+<CompuCell3D Revision="20260214" Version="4.9.0">
+   
+   <Metadata>
+      
+      <!-- Basic properties simulation -->
+      <NumberOfProcessors>1</NumberOfProcessors>
+      <DebugOutputFrequency>10</DebugOutputFrequency>
+      <!-- <NonParallelModule Name="Potts"/> -->
+      <MCSConversionFactor DisplayName="minute" Units="min">1.0</MCSConversionFactor>
+      <VoxelConversionFactor DisplayName="micrometer" Units="um">2</VoxelConversionFactor>
+   </Metadata>
+   
+   <Potts>
+      <!-- Basic properties of CPM (GGH) algorithm -->
+      <Dimensions x="200" y="200" z="1"/>
+      <Steps>100000</Steps>
+      <Temperature>10.0</Temperature> 
+      <!-- Temp was 10.0 -->
+      <NeighborOrder>2</NeighborOrder>
+   </Potts>
+   
+   <Plugin Name="PixelTracker">
+   
+   <!-- Module tracking pixels of each cell -->
+   </Plugin>
+
+   
+   <Plugin Name="CellType">
+      
+      <!-- Listing all cell types in the simulation -->
+      <CellType TypeId="0" TypeName="Medium"/>
+      <CellType TypeId="1" TypeName="cellA"/>
+      <!-- <CellType TypeId="2" TypeName="cellB"/> -->
+   </Plugin>
+   
+   <Plugin Name="CenterOfMass">
+      
+      <!-- Module tracking center of mass of each cell -->
+   </Plugin>
+   
+   <Plugin Name="NeighborTracker">
+      
+      <!-- Module tracking neighboring cells of each cell -->
+   </Plugin>
+   
+   <Plugin Name="Contact">
+      <!-- Specification of adhesion energies -->
+      <Energy Type1="Medium" Type2="Medium">0</Energy>
+      <Energy Type1="Medium" Type2="cellA">50.0</Energy>
+      <!-- <Energy Type1="Medium" Type2="cellB">50.0</Energy> -->
+      <Energy Type1="cellA" Type2="cellA">50.0</Energy>
+      <!-- <Energy Type1="cellB" Type2="cellB">50.0</Energy> -->
+      <!-- <Energy Type1="cellA" Type2="cellB">10000.0</Energy> -->
+      <NeighborOrder>2</NeighborOrder>
+   </Plugin>
+   
+   <Plugin Name="Volume">
+       <VolumeEnergyParameters CellType="cellA" LambdaVolume="60.0" TargetVolume="3000"/>
+       <!-- <VolumeEnergyParameters CellType="cellB" LambdaVolume="60.0" TargetVolume="3000"/> -->
+    </Plugin>
+    
+    
+    
+   <Plugin Name="AdhesiveSat">
+   
+      <!-- Non-Integrin Substrate Adhesion -->
+      <!-- Strength parameter 50.0-->
+      <lambdaC>3.87e-13</lambdaC> 
+      
+      <!-- Saturation parameter (should be area of the cell)-->
+      <Aref>3000.0</Aref>
+      
+      
+      <!-- Focal adhesion penalty for breaking integrin bonds -->
+      <!-- Scaling parameter (800) -->
+      <LambdaFA>800.0</LambdaFA> 
+      
+      <!-- Initial size of an FA -->
+      <N0>50.0</N0>
+      
+      <!-- Saturation parameter -->
+      <Nh>25.0</Nh>
+      
+   </Plugin>
+    
+    
+   <Steppable Type="UniformInitializer">
+      
+      <!-- Initial layout of cells in the form of rectangular slab -->
+      <!-- <Region> -->
+         <!-- <BoxMin x="350" y="350" z="0"/> -->
+         <!-- <BoxMax x="400" y="400" z="1"/> -->
+         <!-- <Gap>0</Gap> -->
+         <!-- <Width>50</Width> -->
+         <!-- <Types>cellA</Types> -->
+      <!-- </Region> -->
+      <Region>
+         <BoxMin x="90" y="90" z="0"/>
+         <BoxMax x="110" y="110" z="1"/>
+         <Gap>0</Gap>
+         <Width>20</Width>
+         <Types>cellA</Types>
+      </Region>
+      
+      <!-- <Region> -->
+         <!-- <BoxMin x="120" y="100" z="0"/> -->
+         <!-- <BoxMax x="140" y="120" z="1"/> -->
+         <!-- <Gap>0</Gap> -->
+         <!-- <Width>20</Width> -->
+         <!-- <Types>cellB</Types> -->
+      <!-- </Region> -->
+      
+   </Steppable>
+</CompuCell3D>

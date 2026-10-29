@@ -63,12 +63,12 @@ void AdhesiveSatPlugin::init(Simulator *simulator, CC3DXMLElement *_xmlData) {
     
     fieldDim = cellFieldG->getDim();
 
-    ASSERT_OR_THROW(
-        "AdhesiveSat requires a 200x200x1 lattice",
-        fieldDim.x == 200 &&
-        fieldDim.y == 200 &&
-        fieldDim.z == 1
-    );
+    // ASSERT_OR_THROW(
+    //     "AdhesiveSat requires a 200x200x1 lattice",
+    //     fieldDim.x == 200 &&
+    //     fieldDim.y == 200 &&
+    //     fieldDim.z == 1
+    // );
 
     potts->getCellFactoryGroupPtr()->registerClass(
         &adhesiveSatDataAccessor
@@ -148,32 +148,32 @@ Initialize shape
 //     }
 // }
 
-void AdhesiveSatPlugin::initializeGridField() {
-    const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
-    const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
+// void AdhesiveSatPlugin::initializeGridField() {
+//     const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
+//     const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
 
-    for (int x = 0; x < fieldDim.x; ++x) {
-        for (int y = 0; y < fieldDim.y; ++y) {
-            Point3D pt(x, y, 0);
+//     for (int x = 0; x < fieldDim.x; ++x) {
+//         for (int y = 0; y < fieldDim.y; ++y) {
+//             Point3D pt(x, y, 0);
 
-            int xMod = x % fiberSpacing;
-            int yMod = y % fiberSpacing;
+//             int xMod = x % fiberSpacing;
+//             int yMod = y % fiberSpacing;
 
-            // Vertical fibers running along the Y-axis
-            bool verticalFiber = (xMod <= halfWidth) || (xMod >= fiberSpacing - halfWidth);
+//             // Vertical fibers running along the Y-axis
+//             bool verticalFiber = (xMod <= halfWidth) || (xMod >= fiberSpacing - halfWidth);
 
-            // Horizontal fibers running along the X-axis
-            bool horizontalFiber = (yMod <= halfWidth) || (yMod >= fiberSpacing - halfWidth);
+//             // Horizontal fibers running along the X-axis
+//             bool horizontalFiber = (yMod <= halfWidth) || (yMod >= fiberSpacing - halfWidth);
 
-            bool adhesionMoleculesPresent = verticalFiber || horizontalFiber;
+//             bool adhesionMoleculesPresent = verticalFiber || horizontalFiber;
 
-            adhesionField->set(
-                pt,
-                static_cast<unsigned char>(adhesionMoleculesPresent)
-            );
-        }
-    }
-}
+//             adhesionField->set(
+//                 pt,
+//                 static_cast<unsigned char>(adhesionMoleculesPresent)
+//             );
+//         }
+//     }
+// }
 
 
 /*
@@ -344,7 +344,7 @@ void AdhesiveSatPlugin::update(CC3DXMLElement *_xmlData, bool _fullInitFlag) {
 void AdhesiveSatPlugin::initializeBeads(double stepSize) {
     beadPositions.clear();
 
-    const int fiberSpacing = 40; // Distance between parallel fiber centers (pixels)
+    const int fiberSpacing = 20; // Distance between parallel fiber centers (pixels)
     const int halfWidth = 1;    // Fiber width = 3 pixels (center pixel +/- halfWidth)
 
     // Offsets to shift positions to centered MD box coordinates [-Lx/2, Lx/2]
@@ -420,7 +420,7 @@ void AdhesiveSatPlugin::checkBeadCellAttribution() {
 
 void AdhesiveSatPlugin::extraInit(Simulator* simulator) {
     // initializeYField();
-    initializeGridField();
+    // initializeGridField();
     initializeBeads(1.0);
     // initializeBeads(1.0); // Creates beads every 1.0 unit along fibers
     initializeOccupiedSiteCounts();
