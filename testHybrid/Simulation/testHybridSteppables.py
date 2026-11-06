@@ -66,11 +66,11 @@ class FiberPlotterSteppable(SteppableBasePy):
         boundary_pts = pts_cc3d[typeids == 3]
 
         if len(free_pts) > 0:
-            ax.scatter(free_pts[:, 0], free_pts[:, 1], c='blue', s=5, label='Free Bead', zorder=4)
+            ax.scatter(free_pts[:, 0], free_pts[:, 1], c='blue', s=1.5, label='Free Bead', zorder=4)
         if len(adhesion_pts) > 0:
-            ax.scatter(adhesion_pts[:, 0], adhesion_pts[:, 1], c='red', s=2, label='Focal Adhesion', zorder=5)
+            ax.scatter(adhesion_pts[:, 0], adhesion_pts[:, 1], c='red', s=1.5, label='Focal Adhesion', zorder=5)
         if len(boundary_pts) > 0:
-            ax.scatter(boundary_pts[:, 0], boundary_pts[:, 1], c='black', s=5, label='Boundary Anchor', zorder=4)
+            ax.scatter(boundary_pts[:, 0], boundary_pts[:, 1], c='black', s=7, label='Boundary Anchor', zorder=4)
 
         # Formatting
         ax.set_xlim(0, self.dim.x)
@@ -90,6 +90,7 @@ class testHybridSteppable(SteppableBasePy):
 
     def __init__(self, frequency=1):
         SteppableBasePy.__init__(self, frequency)
+        
         self.sim = None
         self.integrator = None
     
@@ -102,8 +103,8 @@ class testHybridSteppable(SteppableBasePy):
         # Simulation parameters (K_cross = K_polymer, need to add K_cross)
         self.md_dt = 0.1             # 0.0001; MD time iterations
         self.md_kT = 0.001           # 0.001; kT for Brownian motion and thermalize_particle_momenta
-        self.spring_k = 0.09         # 100; linear spring constant
-        self.crosslink_k = 0.09
+        self.spring_k = 0.02         # 100; linear spring constant
+        self.crosslink_k = 0.02
         self.crosslink_r0 = 3
 
         # # Additional cross link values from Tsingos et al
@@ -114,7 +115,7 @@ class testHybridSteppable(SteppableBasePy):
         self.spring_k_cyto = 3.10e-4 #10; spring constant for cytoskeleton
         self.spring_r0_cyto = 0
 
-        self.spring_r0 = 5           # 6.25; spring resting length
+        self.spring_r0 = 10           # 6.25; spring resting length
         self.bend_k = 3.88e-15       # 10.0; angular spring constant
         self.bend_t0 = np.pi         # np.pi; equilibrium angle (theta_0 in radians)
         self.gamma_drag = 10
@@ -259,6 +260,8 @@ class testHybridSteppable(SteppableBasePy):
 
     def start(self):
         """Initializes HOOMD device, snapshot, topology, and bond integrators."""
+        
+        print(os.getcwd())
 
         # Initiate the required fields
         self.bead_field = self.create_scalar_field_py("BeadField")
@@ -283,8 +286,8 @@ class testHybridSteppable(SteppableBasePy):
 
         #############################################################################
         # GRID OF FIBERS
-        n = 200
-        step = 5
+        n = 256
+        step = 10
         user_fibers = (
             # HORIZONTAL FIBERS (y = 10 to 190, step 5)
             [[(x, y) for x in range(0, n, step)] for y in range(0, n, step)] +
@@ -293,10 +296,15 @@ class testHybridSteppable(SteppableBasePy):
             [[(x, y) for y in range(0, n, step)] for x in range(0, n, step)]
         )
         
-        # # OUR SPLINES
-        # with open('/Users/svaren/Downloads/shg_splines_42.json', 'r', encoding='utf-8') as file:
+        # OUR SPLINES
+        # with open('/Users/svaren/Documents/GitHub/cpm-ecm-migration/shg_splines_42.json', 'r', encoding='utf-8') as file:
             # data = json.load(file)
         # user_fibers = data['splines']
+        
+        
+        # # NO FIBERS
+        # user_fibers = []
+        
         
         # # ONE VERTICAL FIBER
         # spline_coords = [(375, y) for y in range(0, 501, 5)]
@@ -335,7 +343,7 @@ class testHybridSteppable(SteppableBasePy):
             self.snapshot.particles.position[k] = all_pts_hoomd_3d[k]
 
             if k in frozen_indices:
-                self.snapshot.particles.typeid[k] = 3 # Cross link bead
+                self.snapshot.particles.typeid[k] = 3 # Boundary bead
             else:
                 self.snapshot.particles.typeid[k] = 0 # Free bead
 
@@ -344,7 +352,8 @@ class testHybridSteppable(SteppableBasePy):
         self.snapshot.particles.typeid[self.com_particle_idx] = 1  # cell_com
 
         # Populate Snapshot Data with bonds
-        self.snapshot.bonds.N = len(self.linear_bonds) + self.num_grid_pts  # total bonds = linear bonds + grid-to-COM bonds;
+         # total bonds = linear bonds + grid-to-COM bonds + crosslink bonds;
+        self.snapshot.bonds.N = len(self.linear_bonds) + self.num_grid_pts + len(crosslink_bonds)
         self.snapshot.bonds.types = [ "no_bond","linear_spring", "cyto_spring", "crosslink"]
 
         # Create linear bonds in snapshot
@@ -352,10 +361,10 @@ class testHybridSteppable(SteppableBasePy):
             self.snapshot.bonds.group[i] = pair
             self.snapshot.bonds.typeid[i] = 1  # linear_spring
 
-        # # Create cross link bonds
-        # for i, pair in enumerate(crosslink_bonds):
-        #     self.snapshot.bonds.group[i] = pair
-        #     self.snapshot.bonds.typeid[i] = 3
+        # Create cross link bonds
+        for i, pair in enumerate(crosslink_bonds):
+            self.snapshot.bonds.group[i] = pair
+            self.snapshot.bonds.typeid[i] = 3
 
         # Create bead-to-COM bonds ONLY for free beads (excludes com_particle_idx)
         for i in range(self.num_grid_pts):
@@ -379,6 +388,7 @@ class testHybridSteppable(SteppableBasePy):
         print("Particle types:      ", self.snapshot.particles.types)
         print("Linear bond types:   ", self.snapshot.bonds.types)
         print("Angular bond types:  ", self.snapshot.angles.types)
+        print("Crosslink bonds:     ", crosslink_bonds)
         print()
 
 
@@ -399,7 +409,8 @@ class testHybridSteppable(SteppableBasePy):
         # # Cross link bonds
         # NEED TO EDIT 
         beamspring.params["crosslink"] = dict(
-            k=self.crosslink_k, r0=self.crosslink_r0
+            k=self.crosslink_k, 
+            r0=self.crosslink_r0
         )
 
         # No bond
@@ -624,4 +635,21 @@ class testHybridSteppable(SteppableBasePy):
 '''Initialize FAs in step(): Set self.fa\_integrins[p\_idx] = self.N\_0 when a bead becomes an adhesion site (typeid == 2), and pop it on unbinding. 
 2. Parameter Calibration 
 3. Dynamic Boundaries: Currentlly we define boundary indeces explicitly and it is not gebneral nor convenient.
-'''
+# '''
+
+    # def finish(self):
+        # """
+        # Called after the last MCS to wrap up the simulation
+        # """
+
+    # def on_stop(self):
+        # """
+        # Called if the simulation is stopped before the last MCS
+        # """
+        
+        
+        
+        
+        
+        
+        
