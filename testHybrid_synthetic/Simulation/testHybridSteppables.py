@@ -294,7 +294,7 @@ class testHybridSteppable(SteppableBasePy):
         # )
         
         # OUR SPLINES
-        with open('./shg_splines_42.json', 'r', encoding='utf-8') as file:
+        with open('/Users/svaren/Documents/GitHub/cpm-ecm-migration/shg_splines_42.json', 'r', encoding='utf-8') as file:
             data = json.load(file)
         user_fibers = data['splines']
         

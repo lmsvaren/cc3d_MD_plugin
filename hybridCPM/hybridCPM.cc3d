@@ -1,0 +1,5 @@
+<Simulation version="4.9.0">
+   <XMLScript Type="XMLScript">Simulation/hybridCPM.xml</XMLScript>
+   <PythonScript Type="PythonScript">Simulation/hybridCPM.py</PythonScript>
+   <Resource Type="Python">Simulation/hybridCPMSteppables.py</Resource>
+</Simulation>

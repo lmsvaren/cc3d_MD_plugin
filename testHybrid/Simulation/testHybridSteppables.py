@@ -239,9 +239,12 @@ class testHybridSteppable(SteppableBasePy):
 
         # Cross link bonds
         for end_idx, chain_id in end_beads:
+            
             d2 = np.sum((pts - pts[end_idx]) ** 2, axis=1).astype(float) # Euclidean distance from bead and pt
             d2[list(chain_members[chain_id])] = np.inf # exclude self
             nearest = int(np.argmin(d2)) # get the nearest
+            if end_idx == nearest:
+                continue 
             if np.isfinite(d2[nearest]):
                 crosslink_bonds.add((min(end_idx, nearest), max(end_idx, nearest)))
 
